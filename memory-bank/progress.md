@@ -6,6 +6,16 @@
 - [x] UART1 initialization on GPIO 19/20 (RS232, 9600 baud)
 - [x] Bidirectional byte forwarding between USB↔UART1
 - [x] Fixed hex output bug: `Serial.write("%2x", ...)` → proper `%02x` formatting via snprintf
+- [x] Git initialized on `master` branch with initial commit
+- [x] GitHub repo created and code pushed to https://github.com/mikehage-star/eis_4000
+- [x] `dev` branch created with branch protection (requires 1 PR approval before merge)
+
+## Workflow
+**Branch strategy:** All tasks create a new feature branch from `dev`. Every task requires a pull request that must be approved by the user before merging into `dev`.
+
+```
+master ← dev ← feature/xxx → PR → review/approve → merge to dev
+```
 
 ## What's Left to Build
 - [ ] Requirements definition (in progress)
@@ -26,5 +36,6 @@ Memory Bank documentation is initialized. Code compiles and runs but has a known
 
 ## Next Milestones
 1. **M1:** ✅ Fixed hex output bug, verified serial forwarding compiles
-2. **M2:** Define EIS-4000 requirements and target protocol(s)
-3. **M3:** Implement required feature set based on M2 decisions
+2. **M2:** ✅ Git repo created and pushed to GitHub (mikehage-star/eis_4000)
+3. **M3:** Define EIS-4000 requirements and target protocol(s) → create PR from feature branch
+4. **M4:** Implement required feature set based on M3 decisions → create PR from feature branch
