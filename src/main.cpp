@@ -1,62 +1,133 @@
 #include <Arduino.h>
+#include <WiFi.h>
+#include <WebServer.h>
 #include "GrtDecoder.h"
+#include "dashboard_html.h"
 
-// Configuration
-#define RS232_BAUD 9600          // Change to match your RS232 device (e.g., 4800, 19200, 115200)
-#define UART_RX_PIN 19           // ESP32 Serial1 RX (GPIO19)
-#define UART_TX_PIN 20           // ESP32 Serial1 TX (GPIO20)
+// === Configuration ===
+#define RS232_BAUD   9600
+#define UART_RX_PIN  19
+#define UART_TX_PIN  20
+#define WIFI_SSID    "EIS-4000"
+#define WIFI_PASS    "eis4000"
 
-// GRT EIS-4000 decoder instance
 GrtDecoder grt;
+WebServer server(80);
+
+// ── HTTP handler: JSON telemetry ───────────────────────────────
+
+void handleTelemetry() {
+    const GrtFrame& f = grt.getLastFrame();
+    String j;
+    j.reserve(400);
+
+    j += F("{\"valid\":");
+    j += f.isValid ? F("true") : F("false");
+
+    j += F(",\"tach\":");     j += f.tach;
+    j += F(",\"ias\":");      j += f.airspeed;
+    j += F(",\"alt\":");      j += f.getAltitudeFeet();
+
+    j += F(",\"cht\":[");
+    for (int i = 0; i < 6; i++) { if (i) j += ','; j += f.cht[i]; }
+    j += F("]");
+
+    j += F(",\"egt\":[");
+    for (int i = 0; i < 6; i++) { if (i) j += ','; j += f.egt[i]; }
+    j += F("]");
+
+    j += F(",\"voltage\":");   j += String(f.getVoltage(), 1);
+    j += F(",\"oiltemp\":");   j += f.oilTemp;
+    j += F(",\"oilpress\":");  j += f.oilPressure;
+    j += F(",\"coolant\":");   j += f.coolantTemp;
+    j += F(",\"fflow\":");     j += String(f.getFuelFlowGPH(), 1);
+    j += F(",\"fqty\":");      j += String(f.getFuelQtyGal(), 1);
+    j += F(",\"hours\":");     j += String(f.getHourmeterHrs(), 1);
+    j += F(",\"baro\":");      j += String(f.getBaroInHg(), 2);
+    j += F(",\"vspeed\":");    j += f.getVerticalSpeedFpm();
+    j += F(",\"oat\":");       j += (int)f.oatOffset - 50;
+
+    j += F(",\"ft_h\":");     j += f.flightHours;
+    j += F(",\"ft_m\":");     j += f.flightMinutes;
+    j += F(",\"ft_s\":");     j += f.flightSeconds;
+    j += F(",\"te_h\":");     j += f.timeEmptyHrs;
+    j += F(",\"te_m\":");     j += f.timeEmptyMins;
+
+    j += F(",\"stats\":{");
+    j += F("\"frames\":");    j += grt.getFramesReceived();
+    j += F(",\"errors\":");   j += grt.getChecksumErrors();
+    j += F(",\"resets\":");   j += grt.getHeaderResets();
+    j += F("}}");
+
+    server.send(200, "application/json", j);
+}
+
+// ── Setup ──────────────────────────────────────────────────────
 
 void setup() {
-    // Initialize USB serial (via onboard CP210x/CH340 adapter on most DevKit boards)
     Serial.begin(115200);
-    // Initialize hardware UART for RS232 connection
+    delay(500);
+
+    Serial.println(F("\n=== EIS-4000 M2: WiFi Telemetry Dashboard ==="));
+
+    // RS232 UART
     Serial1.begin(RS232_BAUD, SERIAL_8N1, UART_RX_PIN, UART_TX_PIN);
+    Serial.print(F("UART1 (RS232): "));
+    Serial.print(RS232_BAUD);
+    Serial.print(F(" baud | RX=GPIO"));
+    Serial.print(UART_RX_PIN);
+    Serial.print(F(" TX=GPIO"));
+    Serial.println(UART_TX_PIN);
 
-    delay(500);  // brief pause to let USB serial stabilize on host
-    Serial.println(F("\n=== GRT EIS-4000 Decoder ==="));
-    Serial.print(F("USB Baud: 115200 | RS232 Baud: "));
-    Serial.println(RS232_BAUD);
+    // WiFi Access Point (192.168.4.1)
+    WiFi.mode(WIFI_AP);
+    WiFi.softAPConfig(IPAddress(192, 168, 4, 1),
+                      IPAddress(192, 168, 4, 1),
+                      IPAddress(255, 255, 255, 0));
+    WiFi.softAP(WIFI_SSID, WIFI_PASS);
+    IPAddress apIP = WiFi.softAPIP();
 
-    // Set up frame callback — prints decoded fields when a valid frame arrives
+    Serial.print(F("WiFi AP: "));
+    Serial.print(WIFI_SSID);
+    Serial.print(F(" | IP: "));
+    Serial.println(apIP.toString());
+    Serial.print(F("Dashboard: http://"));
+    Serial.println(apIP.toString());
+
+    // HTTP server routes
+    server.on("/", HTTP_GET, []() {
+        server.send(200, "text/html", dashboardHtml);
+    });
+    server.on("/api/telemetry", HTTP_GET, handleTelemetry);
+    server.onNotFound([]() {
+        server.send(404, "text/plain", F("Not found"));
+    });
+    server.begin();
+    Serial.println(F("HTTP server ready on port 80"));
+
+    // GRT decoder callback — periodic serial log (every 10 s)
     grt.onFrame([](const GrtFrame& f) {
-        String line = "";
-        for (uint8_t i = 0; i < 38; i++) {
-            if (!line.isEmpty()) line += " | ";
-            line += f.getField(i);
-        }
-        Serial.println(line);
-
-        // Print stats every 10 frames
-        static uint32_t counter = 0;
-        counter++;
-        if (counter % 10 == 0) {
-            Serial.print(F("[Stats] Frames: "));
-            Serial.print(grt.getFramesReceived());
-            Serial.print(F(" | Checksum errors: "));
-            Serial.print(grt.getChecksumErrors());
-            Serial.print(F(" | Header resets: "));
-            Serial.println(grt.getHeaderResets());
+        static unsigned long lastLog = 0;
+        if (millis() - lastLog >= 10000) {
+            lastLog = millis();
+            Serial.print(F("TACH="));   Serial.print(f.tach);
+            Serial.print(F(" IAS="));   Serial.print(f.airspeed);
+            Serial.print(F(" ALT="));   Serial.print(f.getAltitudeFeet());
+            Serial.print(F(" CHT1="));  Serial.print(f.cht[0]);
+            Serial.print(F(" EGT1="));  Serial.print(f.egt[0]);
+            Serial.print(F(" V="));     Serial.print(f.getVoltage(), 1);
+            Serial.print(F(" OILP="));  Serial.println(f.oilPressure);
         }
     });
 
-    // Also forward USB -> RS232 for bidirectional communication (e.g., sending commands)
-    Serial.println(F("Ready. Forwarding RS232 -> decoded output."));
+    Serial.println(F("Ready. Connect to WiFi and open dashboard."));
 }
 
+// ── Loop ───────────────────────────────────────────────────────
+
 void loop() {
-    // Feed incoming RS232 bytes into the GRT decoder (non-blocking, one byte per iteration)
-    if (Serial1.available()) {
-        grt.feedByte(Serial1.read());
-    }
-
-    // Forward from USB to RS232 (bidirectional, non-blocking, one byte per iteration)
-    if (Serial.available()) {
-        Serial1.write(Serial.read());
-    }
-
-    // ESP32 RTOS yield — required for WiFi, watchdog, and background tasks
+    if (Serial1.available()) grt.feedByte(Serial1.read());
+    if (Serial.available())   Serial1.write(Serial.read());
+    server.handleClient();
     yield();
 }

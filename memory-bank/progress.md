@@ -10,6 +10,11 @@
 - [x] Non-blocking UART reading (no more blocking `while(available())` loops)
 - [x] ESP32 RTOS yield() in loop() for WiFi/watchdog stability
 - [x] Decoder reset() method — clears stale fields on all error/sync paths
+- [x] WiFi AP mode (SSID: EIS-4000, IP: 192.168.4.1)
+- [x] HTTP server with `/` (dashboard) and `/api/telemetry` (JSON) endpoints
+- [x] Responsive web dashboard — dark cockpit theme, 4-cylinder CHT/EGT grid, zone coloring
+- [x] JS polling at 2s interval with stale-data detection
+- [x] JSON telemetry includes all 6 CHT/EGT slots (future-proofed) + stats
 
 ## What's Left to Build
 
@@ -19,11 +24,14 @@
 - Added decoder reset() for consistent state management
 - Removed debug countdown timer from setup()
 
-### M2: WiFi AP + JSON telemetry server (NEXT)
-- [ ] Add WiFi AP mode with captive portal
-- [ ] HTTP server serving responsive web dashboard (HTML/CSS/JS)
-- [ ] WebSocket or polling endpoint for decoded frame data every 5s
-- [ ] Dashboard gauges: RPM, CHT(×4), EGT(×4), hydraulic pressure, voltage, altitude
+### M2: WiFi AP + JSON telemetry server ✅ COMPLETE
+- [x] WiFi AP mode (192.168.4.1/24)
+- [x] HTTP server serving responsive web dashboard (HTML/CSS/JS)
+- [x] Polling endpoint (`/api/telemetry`) for decoded frame data every 2s
+- [x] Dashboard gauges: RPM, CHT(×4), EGT(×4), oil temp/pressure, voltage, altitude, fuel
+- [x] Zone-based color coding (green/yellow/red) per gauge
+- [x] Stale data detection (3 unchanged polls → STALE indicator)
+- [x] Builds clean: RAM 13.8%, Flash 58.4%
 
 ### M3: Configuration system
 - [ ] Web-based config page: WiFi settings, UART baud, display channels
@@ -31,14 +39,15 @@
 - [ ] Frame quality stats (checksum errors, frames/sec)
 
 ## Current Status
-**Phase:** M1 complete — ready to start M2 (WiFi AP + web dashboard)
-**Branch:** `feature/m1_fix_bugs` pushed to origin
+**Phase:** M2 complete — ready to start M3 (Configuration system) or hardware smoke test
+**Branch:** `feature/m1_fix_bugs` (M2 changes pending commit)
 
 ## Known Issues
 1. **No flow control:** High baud rates or bursty data may cause buffer overflows.
-2. **No WiFi yet:** Currently serial-only; no network connectivity for remote monitoring.
+2. **Single HTML file:** Dashboard is ~4KB in flash; fine for now but may need optimization if M3 adds more pages.
 
 ## Next Milestones
 1. **M1:** ✅ Complete — stable RS232 decoding with non-blocking I/O
-2. **M2:** WiFi AP + responsive web dashboard (phone/iPad target, 5s update rate)
+2. **M2:** ✅ Complete — WiFi AP + responsive web dashboard (2s update, zone coloring)
 3. **M3:** Configuration system with NVS persistence
+4. **Smoke test:** Flash to ESP32, connect phone to EIS-4000 AP, verify dashboard
